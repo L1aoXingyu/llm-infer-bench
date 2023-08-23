@@ -1,9 +1,12 @@
 from dataclasses import dataclass, field
+import time
 import random
 import numpy as np
+import aiohttp
+from utils import MeasureLatency, calculate_throughput, calculate_cdf
 import itertools
 import json
-from typing import Optional, Union
+from typing import Optional, Union, List, Tuple
 from enum import Enum
 import asyncio
 from transformers import HfArgumentParser, PreTrainedTokenizerBase, AutoTokenizer
@@ -32,6 +35,18 @@ class InferenceArguments:
     random_prompt_lens_range: Optional[int] = field(
         default=20, metadata={"help": "Range of the random prompt lengths"}
     )
+    allow_random_response_lens: Optional[bool] = field(
+        default=True,
+        metadata={
+            "help": "Allow random response lengths, otherwise use fixed_max_response_tokens"
+        },
+    )
+    fixed_max_response_tokens: Optional[int] = field(
+        default=1024, metadata={"help": "Fixed max tokens for response length"}
+    )
+    max_model_input_length: Optional[int] = field(
+        default=2048, metadata={"help": "Max model input length"}
+    )
     random_response_lens_mean: Optional[int] = field(
         default=128, metadata={"help": "Mean of the random response lengths"}
     )
@@ -44,10 +59,39 @@ class InferenceArguments:
     trust_remote_code: Optional[bool] = field(
         default=True, metadata={"help": "Trust remote code"}
     )
+    traffic_distribution: Optional[Distribution] = field(
+        default=Distribution.burst,
+        metadata={"help": "Distribution of the requests sending"},
+    )
     response_distribution: Optional[Distribution] = field(
         default=Distribution.uniform,
         metadata={"help": "Distribution of the response lengths"},
     )
+    print_generation_lens_and_exit: Optional[bool] = field(
+        default=False, metadata={"help": "Print generation lens and exit"}
+    )
+
+
+def sample_requests(
+    tokenizer: PreTrainedTokenizerBase,
+    prompt_lens_mean,
+    prompt_lens_range,
+    num_prompts,
+    prompt_filename: str,
+) -> Tuple[List[str], List[int]]:
+    if prompt_filename:
+        # Load real dataset
+        with open(prompt_filename, "r") as f:
+            prompts = json.load(f)
+        prompt_lens = itertools.repeat(-1)
+    else:
+        # Generate random prompts
+        random.seed(0xCADE)
+        prompts, prompt_lens = gen_random_prompts(
+            tokenizer, prompt_lens_mean, prompt_lens_range, num_prompts
+        )
+
+    return prompts, prompt_lens
 
 
 def gen_random_prompts(
@@ -122,41 +166,123 @@ def gen_random_response_lens(
         raise ValueError(f"unknown distribution {distribution=}")
 
 
-async def benchmark():
-    pass
+async def query_model_vllm(prompt: Tuple[str, int, int], port: int):
+    prompt, _, expected_response_len = prompt
+
+    timeout = aiohttp.ClientTimeout(total=4 * 60 * 60)  # 4 hours
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        generation_input = dict(
+            inputs=prompt,
+            parameters=dict(ignore_eos=True, max_tokens=expected_response_len),
+        )
+
+        async with session.post(
+            f"http://localhost:{port}/generate", json=generation_input
+        ) as resp:
+            if resp.status != 200:
+                print(f"Error: {resp.status} {resp.reason}")
+                print(await resp.text())
+                return None, None
+
+            output = await resp.json()
+            output["response_len"] = expected_response_len  # use to latency calculation
+
+            return (prompt, output)
+
+
+async def async_request_gen(generator, qps: float, distribution: Distribution):
+    def get_wait_time():
+        mean_time_between_requests = 1.0 / qps
+        if distribution == Distribution.uniform:
+            return mean_time_between_requests
+        else:
+            return np.random.exponential(mean_time_between_requests)
+
+    while True:
+        try:
+            item = next(generator)
+            yield item
+            if distribution != Distribution.burst:
+                await asyncio.sleep(get_wait_time())
+        except StopIteration:
+            return
+
+
+async def benchmark(
+    prompts: List[Tuple[str, int, int]], traffic_distribution: Distribution, port: int
+):
+    m = MeasureLatency()
+    query_model = m.measure(query_model_vllm)
+
+    if traffic_distribution == Distribution.burst:
+        qps = float("inf")
+
+    print(f"Starting benchmark with {traffic_distribution=}, {qps=}")
+
+    total_requests = len(prompts[0])
+
+    async_prompts = async_request_gen(iter(prompts), qps, traffic_distribution)
+
+    start_time = time.time()
+    tasks = []
+    async for prompt in async_prompts:
+        tasks.append(asyncio.create_task(query_model(prompt, port)))
+
+    queries = await asyncio.gather(*tasks)
+    dur_s = time.time() - start_time
+
+    print(queries)
+    median_token_latency = np.median(m._per_token_latencies)
+    median_e2e_latency = np.median(m._latencies)
+
+    # calculate_throughput()
+    # calculate_cdf()
 
 
 def main():
     parser = HfArgumentParser((InferenceArguments,))
-    (inference_args,) = parser.parse_args_into_dataclasses()
+    (args,) = parser.parse_args_into_dataclasses()
 
     tokenizer = AutoTokenizer.from_pretrained(
-        inference_args.tokenizer, trust_remote_code=inference_args.trust_remote_code
+        args.tokenizer, trust_remote_code=args.trust_remote_code
     )
 
-    if inference_args.prompt_filename:
-        # Load real dataset
-        with open(inference_args.prompt_filename, "r") as f:
-            prompts = json.load(f)
-        prompt_lens = itertools.repeat(-1)
-    else:
-        # Generate random prompts
-        random.seed(0xCADE)
-        prompts, prompt_lens = gen_random_prompts(
-            tokenizer,
-            inference_args.lens_mean,
-            inference_args.lens_range,
-            inference_args.num_requests,
-        )
+    prompts, prompt_lens = sample_requests(
+        tokenizer,
+        args.random_prompt_lens_mean,
+        args.random_prompt_lens_range,
+        args.num_requests,
+        args.prompt_filename,
+    )
 
+    if args.allow_random_response_lens:
         response_lens = gen_random_response_lens(
-            inference_args.response_distribution,
-            inference_args.random_response_lens_mean,
-            inference_args.random_response_lens_range,
-            num_responses=inference_args.num_requests,
+            args.response_distribution,
+            args.random_response_lens_mean,
+            args.random_response_lens_range,
+            num_responses=args.num_requests,
         )
+    else:
+        response_lens = [
+            args.fixed_max_response_tokens for _ in range(args.num_requests)
+        ]
 
-    # asyncio.run(benchmark())
+    for i, (prompt_len, resp_len) in enumerate(zip(prompt_lens, response_lens)):
+        total = prompt_len + resp_len
+        if total > args.max_model_input_length:
+            print(f"truncating long prompt+resp_len {prompt_len=} {resp_len=}")
+            resp_len = args.max_model_input_length - prompt_len
+        response_lens[i] = resp_len
+
+    print(f"{prompt_lens[:5]=}")
+    print(f"{response_lens[:5]=}")
+    if args.print_generation_lens_and_exit:
+        return
+
+    prompts = list(zip(prompts, prompt_lens, response_lens))
+
+    asyncio.run(benchmark(prompts, args.traffic_distribution, args.port))
 
 
 if __name__ == "__main__":
