@@ -26,7 +26,7 @@ class InferenceArguments:
         default=None, metadata={"help": "Path to the benchmarking dataset filename"}
     )
     num_requests: Optional[int] = field(
-        default=1000,
+        default=100,
         metadata={"help": "Number of requests to profile inference benchmark"},
     )
     random_prompt_lens_mean: Optional[int] = field(
@@ -183,12 +183,11 @@ async def query_model_vllm(prompt: Tuple[str, int, int], port: int):
             if resp.status != 200:
                 print(f"Error: {resp.status} {resp.reason}")
                 print(await resp.text())
-                return None, None
+                return None
 
             output = await resp.json()
-            output["response_len"] = expected_response_len  # use to latency calculation
 
-            return (prompt, output)
+            return output["generated_text"], expected_response_len
 
 
 async def async_request_gen(generator, qps: float, distribution: Distribution):
@@ -210,7 +209,10 @@ async def async_request_gen(generator, qps: float, distribution: Distribution):
 
 
 async def benchmark(
-    prompts: List[Tuple[str, int, int]], traffic_distribution: Distribution, port: int
+    prompts: List[Tuple[str, int, int]],
+    tokenizer: PreTrainedTokenizerBase,
+    traffic_distribution: Distribution,
+    port: int,
 ):
     m = MeasureLatency()
     query_model = m.measure(query_model_vllm)
@@ -229,14 +231,13 @@ async def benchmark(
     async for prompt in async_prompts:
         tasks.append(asyncio.create_task(query_model(prompt, port)))
 
-    queries = await asyncio.gather(*tasks)
+    responses = await asyncio.gather(*tasks)
     dur_s = time.time() - start_time
 
-    print(queries)
     median_token_latency = np.median(m._per_token_latencies)
     median_e2e_latency = np.median(m._latencies)
 
-    # calculate_throughput()
+    # calculate_throughput(prompts, responses, dur_s, tokenizer)
     # calculate_cdf()
 
 
@@ -282,7 +283,7 @@ def main():
 
     prompts = list(zip(prompts, prompt_lens, response_lens))
 
-    asyncio.run(benchmark(prompts, args.traffic_distribution, args.port))
+    asyncio.run(benchmark(prompts, tokenizer, args.traffic_distribution, args.port))
 
 
 if __name__ == "__main__":
