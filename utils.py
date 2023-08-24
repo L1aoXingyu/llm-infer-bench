@@ -12,16 +12,18 @@ class MeasureLatency:
     def __init__(self):
         self._latencies = []
         self._per_token_latencies = []
+        self._first_token_latencies = []
 
     def measure(self, f):
         async def measured(*args, **kwargs):
             start = time.time()
-            generated_text, response_len = await f(*args, **kwargs)
+            generated_text, response_len, first_token_latency = await f(*args, **kwargs)
 
             # Do not record latency if request failed.
             if generated_text:
                 latency = time.time() - start
                 self._latencies.append(latency)
+                self._first_token_latencies.append(first_token_latency)
                 try:
                     self._per_token_latencies.append(latency / response_len)
                 except ZeroDivisionError:
@@ -38,6 +40,7 @@ def calculate_throughput(
     responses: List[str],
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
+    median_first_token_latency: float,
     median_token_latency: float,
     median_e2e_latency: float,
     results_filename: str,
@@ -66,7 +69,7 @@ def calculate_throughput(
 
     print(f"Writing results to {results_filename} ...")
     with open(results_filename, "a") as f:
-        msg = f"{dur_s=:.02f}s, {throughput_token_s=:.02f}/s, {qps=:.02f}/s, successful_responses={len(responses)}, {prompt_token_count=}, {response_token_count=}, {median_token_latency=:.06f}, {median_e2e_latency=:.06f}"
+        msg = f"{dur_s=:.02f}s, {throughput_token_s=:.02f}/s, {qps=:.02f}/s, successful_responses={len(responses)}, {prompt_token_count=}, {response_token_count=}, {median_first_token_latency=:.06f}, {median_token_latency=:.06f}, {median_e2e_latency=:.06f}"
         print(msg, file=f)
         print(msg)
 

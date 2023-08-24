@@ -64,6 +64,12 @@ class InferenceArguments:
         default=Distribution.BURST,
         metadata={"help": "Distribution of the requests sending"},
     )
+    qps: Optional[float] = field(
+        default=5.0, metadata={"help": "Queries per second for the benchmark"}
+    )
+    stream: Optional[bool] = field(
+        default=False, metadata={"help": "Whether to stream the results or not"}
+    )
     response_distribution: Optional[Distribution] = field(
         default=Distribution.UNIFORM,
         metadata={"help": "Distribution of the response lengths"},
@@ -166,7 +172,7 @@ def gen_random_response_lens(
         raise ValueError(f"unknown distribution {distribution=}")
 
 
-async def query_model_vllm(prompt: Tuple[str, int, int], port: int):
+async def query_model_vllm(prompt: Tuple[str, int, int], stream: bool, port: int):
     prompt, _, expected_response_len = prompt
 
     timeout = aiohttp.ClientTimeout(total=4 * 60 * 60)  # 4 hours
@@ -175,8 +181,11 @@ async def query_model_vllm(prompt: Tuple[str, int, int], port: int):
         generation_input = {
             "inputs": prompt,
             "parameters": {"ignore_eos": True, "max_tokens": expected_response_len},
+            "stream": stream,
         }
 
+        start_time = time.time()
+        first_token_time = 0
         async with session.post(
             f"http://localhost:{port}/generate", json=generation_input
         ) as resp:
@@ -185,9 +194,25 @@ async def query_model_vllm(prompt: Tuple[str, int, int], port: int):
                 print(await resp.text())
                 return None, None
 
-            output = await resp.json()
+            if stream:
+                buffer = b""
+                first_token_received = False
+                async for token in resp.content.iter_any():
+                    buffer += token
 
-            return output["generated_text"][0], expected_response_len
+                    # If this is the first chunk, record the time taken
+                    if not first_token_received:
+                        first_token_time = time.time() - start_time
+                        first_token_received = True
+
+                    while b"\0" in buffer:  # Split by null character
+                        json_str, buffer = buffer.split(b"\0", 1)
+                output = json.loads(json_str.decode("utf-8"))  # Decode JSON
+
+            else:
+                output = await resp.json()
+
+            return output["text"][0], expected_response_len, first_token_time
 
 
 async def async_request_gen(generator, qps: float, distribution: Distribution):
@@ -216,7 +241,9 @@ async def benchmark(
     prompts: List[Tuple[str, int, int]],
     tokenizer: PreTrainedTokenizerBase,
     traffic_distribution: Distribution,
+    qps: int,
     result_filename: str,
+    stream: bool,
     port: int,
 ):
     m = MeasureLatency()
@@ -224,8 +251,6 @@ async def benchmark(
 
     if traffic_distribution == Distribution.BURST:
         qps = float("inf")
-    else:
-        qps = 1.0
 
     print(f"Starting benchmark with {traffic_distribution=}, {qps=}")
 
@@ -234,19 +259,21 @@ async def benchmark(
     start_time = time.time()
     tasks = []
     async for prompt in async_prompts:
-        tasks.append(asyncio.create_task(query_model(prompt, port)))
+        tasks.append(asyncio.create_task(query_model(prompt, stream, port)))
 
     responses = await asyncio.gather(*tasks)
     dur_s = time.time() - start_time
 
     median_token_latency = np.median(m._per_token_latencies)
     median_e2e_latency = np.median(m._latencies)
+    median_first_token_latency = np.median(m._first_token_latencies)
 
     calculate_throughput(
         prompts,
         responses,
         dur_s,
         tokenizer,
+        median_first_token_latency,
         median_token_latency,
         median_e2e_latency,
         result_filename,
@@ -302,7 +329,9 @@ def main():
             prompts,
             tokenizer,
             args.traffic_distribution,
+            args.qps,
             args.result_filename,
+            args.stream,
             args.port,
         )
     )
