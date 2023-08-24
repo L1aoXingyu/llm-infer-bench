@@ -116,9 +116,9 @@ def gen_random_prompts(
     )
 
     # Because tokens do not map 1:1 to words, sometimes we get more or less tokens than desired.
-    # Confusingly, it works with a single iteration per prompt.
-    for i, (p, l) in enumerate(zip(prompts, prompt_lens)):
-        encoded = tokenizer(p, add_special_tokens=False)["input_ids"]
+    new_prompts = []
+    encoded_prompts = tokenizer(prompts, add_special_tokens=False)["input_ids"]
+    for encoded, l in zip(encoded_prompts, prompt_lens):
         if len(encoded) > l:
             # This removes the additional tokens by tokenizing the prompt and cutting off additional tokens.
             encoded = encoded[:l]
@@ -130,9 +130,9 @@ def gen_random_prompts(
         assert (
             len(encoded) == l
         ), f"Expected prompt to contain exactly {l} tokens, got {len(encoded)=}"
-        prompts[i] = decoded
+        new_prompts.append(decoded)
 
-    return prompts, prompt_lens
+    return new_prompts, prompt_lens
 
 
 def gen_random_response_lens(
@@ -183,11 +183,11 @@ async def query_model_vllm(prompt: Tuple[str, int, int], port: int):
             if resp.status != 200:
                 print(f"Error: {resp.status} {resp.reason}")
                 print(await resp.text())
-                return None
+                return None, None
 
             output = await resp.json()
 
-            return output["generated_text"], expected_response_len
+            return output["generated_text"][0], expected_response_len
 
 
 async def async_request_gen(generator, qps: float, distribution: Distribution):
@@ -237,7 +237,16 @@ async def benchmark(
     median_token_latency = np.median(m._per_token_latencies)
     median_e2e_latency = np.median(m._latencies)
 
-    # calculate_throughput(prompts, responses, dur_s, tokenizer)
+    calculate_throughput(
+        prompts,
+        responses,
+        dur_s,
+        tokenizer,
+        median_token_latency,
+        median_e2e_latency,
+        "results.json",
+        True,
+    )
     # calculate_cdf()
 
 
