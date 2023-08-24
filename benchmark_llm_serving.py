@@ -6,17 +6,18 @@ import aiohttp
 from utils import MeasureLatency, calculate_throughput, calculate_cdf
 import itertools
 import json
-from typing import Optional, Union, List, Tuple
+from typing import Optional, List, Tuple
 from enum import Enum
 import asyncio
 from transformers import HfArgumentParser, PreTrainedTokenizerBase, AutoTokenizer
 
 
 class Distribution(str, Enum):
-    burst = "burst"
-    uniform = "uniform"
-    exponential = "exponential"
-    capped_exponential = "capped_exponential"
+    BURST = "burst"
+    UNIFORM = "uniform"
+    POISSON = "poisson"
+    EXPONENTIAL = "exponential"
+    CAPPED_EXPONENTIAL = "capped_exponential"
 
 
 @dataclass
@@ -60,15 +61,18 @@ class InferenceArguments:
         default=True, metadata={"help": "Trust remote code"}
     )
     traffic_distribution: Optional[Distribution] = field(
-        default=Distribution.burst,
+        default=Distribution.BURST,
         metadata={"help": "Distribution of the requests sending"},
     )
     response_distribution: Optional[Distribution] = field(
-        default=Distribution.uniform,
+        default=Distribution.UNIFORM,
         metadata={"help": "Distribution of the response lengths"},
     )
     print_generation_lens_and_exit: Optional[bool] = field(
         default=False, metadata={"help": "Print generation lens and exit"}
+    )
+    result_filename: Optional[str] = field(
+        default="results.txt", metadata={"help": "File to save the results"}
     )
 
 
@@ -108,28 +112,24 @@ def gen_random_prompts(
         return [random.randint(10, max_vocab_ids) for _ in range(length)]
 
     prompt_lens = list(map(lambda _: random.randint(low, high), range(num_prompts)))
-    prompts_as_tokens = list(
-        map(lambda prompt_len: gen_prompt_tokens(prompt_len), prompt_lens)
-    )
-    prompts = list(
-        map(lambda prompt_tokens: tokenizer.decode(prompt_tokens), prompts_as_tokens)
-    )
+    prompts_as_tokens = list(map(gen_prompt_tokens, prompt_lens))
+    prompts = list(map(tokenizer.decode, prompts_as_tokens))
 
     # Because tokens do not map 1:1 to words, sometimes we get more or less tokens than desired.
     new_prompts = []
     encoded_prompts = tokenizer(prompts, add_special_tokens=False)["input_ids"]
-    for encoded, l in zip(encoded_prompts, prompt_lens):
-        if len(encoded) > l:
+    for encoded, pmp_len in zip(encoded_prompts, prompt_lens):
+        if len(encoded) > pmp_len:
             # This removes the additional tokens by tokenizing the prompt and cutting off additional tokens.
-            encoded = encoded[:l]
-        elif len(encoded) < l:
+            encoded = encoded[:pmp_len]
+        elif len(encoded) < pmp_len:
             # This left-pads the prompt with padding tokens.
-            encoded = [tokenizer.pad_token_id] * (l - len(encoded)) + encoded
+            encoded = [tokenizer.pad_token_id] * (pmp_len - len(encoded)) + encoded
         decoded = tokenizer.decode(encoded)
         encoded = tokenizer(decoded, add_special_tokens=False)["input_ids"]
         assert (
-            len(encoded) == l
-        ), f"Expected prompt to contain exactly {l} tokens, got {len(encoded)=}"
+            len(encoded) == pmp_len
+        ), f"Expected prompt to contain exactly {pmp_len} tokens, got {len(encoded)=}"
         new_prompts.append(decoded)
 
     return new_prompts, prompt_lens
@@ -138,7 +138,7 @@ def gen_random_prompts(
 def gen_random_response_lens(
     distribution: Distribution, len_mean: int, len_range: int, num_responses: int
 ):
-    if distribution == Distribution.uniform:
+    if distribution == Distribution.UNIFORM:
         if len_range == 0:
             return [len_mean for _ in range(num_responses)]
 
@@ -148,13 +148,13 @@ def gen_random_response_lens(
             map(lambda _: random.randint(low, high), range(num_responses))
         )
         return num_to_generate
-    elif distribution == Distribution.exponential:
+    if distribution == Distribution.EXPONENTIAL:
         np.random.seed(random.randint(0, 1e6))
         return [
             min(round(s), len_range)
             for s in np.random.exponential(scale=len_mean, size=num_responses)
         ]
-    elif distribution == Distribution.capped_exponential:
+    if distribution == Distribution.CAPPED_EXPONENTIAL:
         np.random.seed(random.randint(0, 1e6))
         response_lens = []
         while len(response_lens) < num_responses:
@@ -172,10 +172,10 @@ async def query_model_vllm(prompt: Tuple[str, int, int], port: int):
     timeout = aiohttp.ClientTimeout(total=4 * 60 * 60)  # 4 hours
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        generation_input = dict(
-            inputs=prompt,
-            parameters=dict(ignore_eos=True, max_tokens=expected_response_len),
-        )
+        generation_input = {
+            "inputs": prompt,
+            "parameters": {"ignore_eos": True, "max_tokens": expected_response_len},
+        }
 
         async with session.post(
             f"http://localhost:{port}/generate", json=generation_input
@@ -193,16 +193,20 @@ async def query_model_vllm(prompt: Tuple[str, int, int], port: int):
 async def async_request_gen(generator, qps: float, distribution: Distribution):
     def get_wait_time():
         mean_time_between_requests = 1.0 / qps
-        if distribution == Distribution.uniform:
+        if distribution == Distribution.UNIFORM:
             return mean_time_between_requests
-        else:
+        if distribution == Distribution.POISSON:
+            # In the Poisson process, the arrival time between requests follow
+            # exponential distribution with mean 1/qps
             return np.random.exponential(mean_time_between_requests)
+        else:
+            raise ValueError(f"unknown traffic distribution {distribution=}")
 
     while True:
         try:
             item = next(generator)
             yield item
-            if distribution != Distribution.burst:
+            if distribution != Distribution.BURST:
                 await asyncio.sleep(get_wait_time())
         except StopIteration:
             return
@@ -212,17 +216,18 @@ async def benchmark(
     prompts: List[Tuple[str, int, int]],
     tokenizer: PreTrainedTokenizerBase,
     traffic_distribution: Distribution,
+    result_filename: str,
     port: int,
 ):
     m = MeasureLatency()
     query_model = m.measure(query_model_vllm)
 
-    if traffic_distribution == Distribution.burst:
+    if traffic_distribution == Distribution.BURST:
         qps = float("inf")
+    else:
+        qps = 1.0
 
     print(f"Starting benchmark with {traffic_distribution=}, {qps=}")
-
-    total_requests = len(prompts[0])
 
     async_prompts = async_request_gen(iter(prompts), qps, traffic_distribution)
 
@@ -244,10 +249,10 @@ async def benchmark(
         tokenizer,
         median_token_latency,
         median_e2e_latency,
-        "results.json",
+        result_filename,
         True,
     )
-    # calculate_cdf()
+    calculate_cdf(m._latencies)
 
 
 def main():
@@ -292,7 +297,15 @@ def main():
 
     prompts = list(zip(prompts, prompt_lens, response_lens))
 
-    asyncio.run(benchmark(prompts, tokenizer, args.traffic_distribution, args.port))
+    asyncio.run(
+        benchmark(
+            prompts,
+            tokenizer,
+            args.traffic_distribution,
+            args.result_filename,
+            args.port,
+        )
+    )
 
 
 if __name__ == "__main__":

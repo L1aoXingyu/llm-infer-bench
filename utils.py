@@ -64,8 +64,9 @@ def calculate_throughput(
 
     qps = len(responses) / dur_s
 
+    print(f"Writing results to {results_filename} ...")
     with open(results_filename, "a") as f:
-        msg = f"dur_s {dur_s:.02f} tokens_per_s {throughput_token_s:.02f} qps {qps:.02f} successful_responses {len(responses)} prompt_token_count {prompt_token_count} response_token_count {response_token_count}, {median_token_latency=}, {median_e2e_latency=}"
+        msg = f"{dur_s=:.02f}s, {throughput_token_s=:.02f}/s, {qps=:.02f}/s, successful_responses={len(responses)}, {prompt_token_count=}, {response_token_count=}, {median_token_latency=:.06f}, {median_e2e_latency=:.06f}"
         print(msg, file=f)
         print(msg)
 
@@ -75,9 +76,21 @@ def calculate_throughput(
         ), f"{fail_on_response_failure=}, expected number of successful responses to equal number of queries, got {len(responses)} vs {len(prompt_lens)}"
 
 
+def plot_cdf(bin_edges, cumsum):
+    import matplotlib
+
+    matplotlib.use("Agg")  # Set the backend to 'Agg'
+    import matplotlib.pyplot as plt
+
+    plt.plot(bin_edges[1:], cumsum, marker="o")
+    plt.xlabel("Latency")
+    plt.ylabel("CDF")
+    plt.title("Cumulative Distribution Function")
+    plt.grid(True)
+    plt.savefig("cdf.png")
+
+
 def calculate_cdf(latencies):
-    hist, bin_edges = np.histogram(latencies)
-    cumsum = np.cumsum(hist)
-    print(f"{bin_edges=}")
-    print(f"{hist=}")
-    print(f"{cumsum=}")
+    hist, bin_edges = np.histogram(latencies, density=True)
+    cumsum = np.cumsum(hist) * np.diff(bin_edges)
+    plot_cdf(bin_edges, cumsum)
