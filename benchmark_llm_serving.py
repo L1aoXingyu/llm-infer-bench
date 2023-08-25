@@ -3,8 +3,7 @@ import time
 import random
 import numpy as np
 import aiohttp
-from utils import MeasureLatency, calculate_throughput, calculate_cdf
-import itertools
+from utils import MeasureLatency, calculate_throughput, calculate_cdf, get_token_id_lens
 import json
 from typing import Optional, List, Tuple
 from enum import Enum
@@ -78,30 +77,82 @@ class InferenceArguments:
         default=False, metadata={"help": "Print generation lens and exit"}
     )
     result_filename: Optional[str] = field(
-        default="results.txt", metadata={"help": "File to save the results"}
+        default="results", metadata={"help": "Filename to save the results"}
     )
 
 
 def sample_requests(
     tokenizer: PreTrainedTokenizerBase,
-    prompt_lens_mean,
-    prompt_lens_range,
-    num_prompts,
+    prompt_lens_mean: int,
+    prompt_lens_range: int,
+    num_prompts: int,
     prompt_filename: str,
+    allow_random_response_lens: bool,
+    response_distribution: Distribution,
+    random_response_lens_mean: int,
+    random_response_lens_range: int,
+    fixed_max_response_tokens: int,
+    max_model_input_length: int,
 ) -> Tuple[List[str], List[int]]:
+    # Generate random prompts
+    random.seed(0xCADE)
+
     if prompt_filename:
         # Load real dataset
         with open(prompt_filename, "r") as f:
-            prompts = json.load(f)
-        prompt_lens = itertools.repeat(-1)
+            datasets = json.load(f)
+        # Filter out the conversations with less than 2 turns (user, llm).
+        # And only keep the first two turns of each conversation.
+        filtered_dataset = []
+        for data in datasets:
+            if len(data["conversations"]) < 2:
+                continue
+
+            filtered_dataset.append(
+                (data["conversations"][0]["value"], data["conversations"][1]["value"])
+            )
+
+        # Sample the prompts and responses
+        filtered_dataset = random.sample(filtered_dataset, num_prompts)
+
+        prompts = []
+        responses = []
+        for prompt, response in filtered_dataset:
+            prompts.append(prompt)
+            responses.append(response)
+
+        prompt_lens = get_token_id_lens(tokenizer, prompts)
+        response_lens = get_token_id_lens(tokenizer, responses)
+
     else:
-        # Generate random prompts
-        random.seed(0xCADE)
         prompts, prompt_lens = gen_random_prompts(
             tokenizer, prompt_lens_mean, prompt_lens_range, num_prompts
         )
 
-    return prompts, prompt_lens
+        if allow_random_response_lens:
+            response_lens = gen_random_response_lens(
+                response_distribution,
+                random_response_lens_mean,
+                random_response_lens_range,
+                num_responses=num_prompts,
+            )
+        else:
+            response_lens = [fixed_max_response_tokens for _ in range(num_prompts)]
+
+    combined_data = list(zip(prompts, prompt_lens, response_lens))
+    # Filter prompts that are too long
+    combined_data = filter(lambda x: x[1] < max_model_input_length - 100, combined_data)
+    prompts, prompt_lens, response_lens = zip(*combined_data)
+    response_lens = list(response_lens)
+
+    for i, (prompt_len, resp_len) in enumerate(zip(prompt_lens, response_lens)):
+        total = prompt_len + resp_len
+        if total > max_model_input_length:
+            print(f"truncating long prompt+resp_len {prompt_len=} {resp_len=}")
+            resp_len = max_model_input_length - prompt_len
+        response_lens[i] = resp_len
+
+    return prompts, prompt_lens, response_lens
 
 
 def gen_random_prompts(
@@ -192,7 +243,7 @@ async def query_model_vllm(prompt: Tuple[str, int, int], stream: bool, port: int
             if resp.status != 200:
                 print(f"Error: {resp.status} {resp.reason}")
                 print(await resp.text())
-                return None, None
+                return None, None, None
 
             if stream:
                 buffer = b""
@@ -276,10 +327,11 @@ async def benchmark(
         median_first_token_latency,
         median_token_latency,
         median_e2e_latency,
-        result_filename,
+        result_filename + ".txt",
         True,
     )
-    calculate_cdf(m._latencies)
+    # Save latency for CDF plotting
+    np.save(result_filename + ".npy", m._latencies)
 
 
 def main():
@@ -290,32 +342,19 @@ def main():
         args.tokenizer, trust_remote_code=args.trust_remote_code
     )
 
-    prompts, prompt_lens = sample_requests(
+    prompts, prompt_lens, response_lens = sample_requests(
         tokenizer,
         args.random_prompt_lens_mean,
         args.random_prompt_lens_range,
         args.num_requests,
         args.prompt_filename,
+        args.allow_random_response_lens,
+        args.response_distribution,
+        args.random_response_lens_mean,
+        args.random_response_lens_range,
+        args.fixed_max_response_tokens,
+        args.max_model_input_length,
     )
-
-    if args.allow_random_response_lens:
-        response_lens = gen_random_response_lens(
-            args.response_distribution,
-            args.random_response_lens_mean,
-            args.random_response_lens_range,
-            num_responses=args.num_requests,
-        )
-    else:
-        response_lens = [
-            args.fixed_max_response_tokens for _ in range(args.num_requests)
-        ]
-
-    for i, (prompt_len, resp_len) in enumerate(zip(prompt_lens, response_lens)):
-        total = prompt_len + resp_len
-        if total > args.max_model_input_length:
-            print(f"truncating long prompt+resp_len {prompt_len=} {resp_len=}")
-            resp_len = args.max_model_input_length - prompt_len
-        response_lens[i] = resp_len
 
     print(f"{prompt_lens[:5]=}")
     print(f"{response_lens[:5]=}")
