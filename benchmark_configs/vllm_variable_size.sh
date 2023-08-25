@@ -2,11 +2,12 @@
 
 export PORT=8000
 
-num_prompts=10
+num_prompts=1000
 ranges=("32" "128" "512" "1536")
-max_batch_total_tokens_vals=("8700" "7500" "8100" "8100")
-model_name="facebook/opt-125m"
+max_batch_total_tokens_vals=("8700" "8700" "8700" "8700")
+model_name="/data/dataset/Llama-2-7b-hf"
 cuda_devices="7"
+result_dir="./benchmark_llama7b"
 
 function start_model_server {
     local max_num_batched_tokens=$1
@@ -73,7 +74,7 @@ for i in ${!ranges[@]}; do
             --random_response_lens_range $range \
             --response_distribution capped_exponential \
             --allow_random_response_lens \
-            --result_filename ./result/vllm_range_${range}_$(date '+%Y-%m-%d_%H:%M:%S')
+            --result_path $result_dir/vllm_range_${range}
     popd
     kill_model_server
 
