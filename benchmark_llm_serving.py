@@ -3,7 +3,7 @@ import time
 import random
 import numpy as np
 import aiohttp
-from utils import MeasureLatency, calculate_throughput, calculate_cdf, get_token_id_lens
+from utils import MeasureLatency, calculate_throughput, get_token_id_lens
 import json
 from typing import Optional, List, Tuple
 from enum import Enum
