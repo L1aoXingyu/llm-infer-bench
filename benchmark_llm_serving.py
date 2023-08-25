@@ -12,6 +12,12 @@ import asyncio
 from transformers import HfArgumentParser, PreTrainedTokenizerBase, AutoTokenizer
 
 
+class Backend(str, Enum):
+    VLLM = "vllm"
+    LIGHTLLM = "lightllm"
+    TGI = "tgi"
+
+
 class Distribution(str, Enum):
     BURST = "burst"
     UNIFORM = "uniform"
@@ -22,6 +28,10 @@ class Distribution(str, Enum):
 
 @dataclass
 class InferenceArguments:
+    backend: Optional[str] = field(
+        default=Backend.VLLM,
+        metadata={"help": "Backend to use for inference benchmark"},
+    )
     port: Optional[int] = field(default=8000, metadata={"help": "Port to listen on"})
     prompt_filename: Optional[str] = field(
         default=None, metadata={"help": "Path to the benchmarking dataset filename"}
@@ -317,6 +327,10 @@ async def query_model_lightllm(prompt: Tuple[str, int, int], stream: bool, port:
             return output["generated_text"][0], expected_response_len, first_chunk_time
 
 
+async def query_model_tgi(prompt: Tuple[str, int, int], stream: bool, port: int):
+    pass
+
+
 async def async_request_gen(generator, qps: float, distribution: Distribution):
     def get_wait_time():
         mean_time_between_requests = 1.0 / qps
@@ -340,6 +354,7 @@ async def async_request_gen(generator, qps: float, distribution: Distribution):
 
 
 async def benchmark(
+    backend: Backend,
     prompts: List[Tuple[str, int, int]],
     tokenizer: PreTrainedTokenizerBase,
     traffic_distribution: Distribution,
@@ -349,7 +364,12 @@ async def benchmark(
     port: int,
 ):
     m = MeasureLatency()
-    query_model = m.measure(query_model_lightllm)
+    if backend == Backend.VLLM:
+        query_model = m.measure(query_model_vllm)
+    elif backend == Backend.LIGHTLLM:
+        query_model = m.measure(query_model_lightllm)
+    elif backend == Backend.TGI:
+        query_model = m.measure(query_model_tgi)
 
     if traffic_distribution == Distribution.BURST:
         qps = float("inf")
@@ -417,6 +437,7 @@ def main():
 
     asyncio.run(
         benchmark(
+            args.backend,
             prompts,
             tokenizer,
             args.traffic_distribution,

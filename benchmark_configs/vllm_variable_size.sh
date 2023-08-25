@@ -8,6 +8,7 @@ max_batch_total_tokens_vals=("8700" "8700" "8700" "8700")
 model_name="/data/dataset/Llama-2-7b-hf"
 cuda_devices="7"
 result_dir="./benchmark_llama7b"
+backend="lightllm"
 
 function start_model_server {
     local max_num_batched_tokens=$1
@@ -45,6 +46,7 @@ for i in ${!ranges[@]}; do
     start_model_server $max_num_batched_tokens
 
     python3 benchmark_llm_serving.py \
+            --backend $backend \
             --port $PORT \
             --random_prompt_lens_mean 512 \
             --random_prompt_lens_range 0 \
@@ -65,6 +67,7 @@ for i in ${!ranges[@]}; do
     start_model_server $max_num_batched_tokens
 
     ulimit -n 65536 && python3 benchmark_llm_serving.py \
+            --backend $backend \
             --port $PORT \
             --random_prompt_lens_mean 512 \
             --random_prompt_lens_range 0 \
@@ -74,7 +77,7 @@ for i in ${!ranges[@]}; do
             --random_response_lens_range $range \
             --response_distribution capped_exponential \
             --allow_random_response_lens \
-            --result_path $result_dir/vllm_range_${range}
+            --result_path $result_dir/${backend}_range_${range}
     popd
     kill_model_server
 
