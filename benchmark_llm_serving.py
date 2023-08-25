@@ -230,9 +230,11 @@ async def query_model_vllm(prompt: Tuple[str, int, int], stream: bool, port: int
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
         generation_input = {
-            "inputs": prompt,
-            "parameters": {"ignore_eos": True, "max_tokens": expected_response_len},
+            "prompt": prompt,
             "stream": stream,
+            # sampling parameters
+            "ignore_eos": True,
+            "max_tokens": expected_response_len,
         }
 
         start_time = time.time()
