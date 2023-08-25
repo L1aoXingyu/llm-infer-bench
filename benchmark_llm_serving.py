@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import time
 import random
+import os
 import numpy as np
 import aiohttp
 from utils import MeasureLatency, calculate_throughput, get_token_id_lens
@@ -76,8 +77,8 @@ class InferenceArguments:
     print_generation_lens_and_exit: Optional[bool] = field(
         default=False, metadata={"help": "Print generation lens and exit"}
     )
-    result_filename: Optional[str] = field(
-        default="results", metadata={"help": "Filename to save the results"}
+    result_path: Optional[str] = field(
+        default="demo_test/demo", metadata={"help": "File path to save the results"}
     )
 
 
@@ -141,7 +142,9 @@ def sample_requests(
 
     combined_data = list(zip(prompts, prompt_lens, response_lens))
     # Filter prompts that are too long
-    combined_data = filter(lambda x: x[1] < max_model_input_length - 100, combined_data)
+    combined_data = filter(
+        lambda x: x[1] < (max_model_input_length - 100), combined_data
+    )
     prompts, prompt_lens, response_lens = zip(*combined_data)
     response_lens = list(response_lens)
 
@@ -202,13 +205,13 @@ def gen_random_response_lens(
         low = len_mean - (len_range // 2)
         high = len_mean + (len_range // 2)
         num_to_generate = list(
-            map(lambda _: random.randint(low, high), range(num_responses))
+            map(lambda _: max(random.randint(low, high), 10), range(num_responses))
         )
         return num_to_generate
     if distribution == Distribution.EXPONENTIAL:
         np.random.seed(random.randint(0, 1e6))
         return [
-            min(round(s), len_range)
+            max(min(round(s), len_range), 10)
             for s in np.random.exponential(scale=len_mean, size=num_responses)
         ]
     if distribution == Distribution.CAPPED_EXPONENTIAL:
@@ -217,7 +220,7 @@ def gen_random_response_lens(
         while len(response_lens) < num_responses:
             sample = round(np.random.exponential(scale=len_mean))
             if sample <= len_range:
-                response_lens.append(sample)
+                response_lens.append(max(sample, 10))
         return response_lens
     else:
         raise ValueError(f"unknown distribution {distribution=}")
@@ -225,6 +228,7 @@ def gen_random_response_lens(
 
 async def query_model_vllm(prompt: Tuple[str, int, int], stream: bool, port: int):
     prompt, _, expected_response_len = prompt
+    assert expected_response_len > 0, f"{expected_response_len=}"
 
     timeout = aiohttp.ClientTimeout(total=4 * 60 * 60)  # 4 hours
 
@@ -295,7 +299,7 @@ async def benchmark(
     tokenizer: PreTrainedTokenizerBase,
     traffic_distribution: Distribution,
     qps: int,
-    result_filename: str,
+    result_path: str,
     stream: bool,
     port: int,
 ):
@@ -321,6 +325,7 @@ async def benchmark(
     median_e2e_latency = np.median(m._latencies)
     median_first_token_latency = np.median(m._first_token_latencies)
 
+    os.makedirs(os.path.dirname(result_path), exist_ok=True)
     calculate_throughput(
         prompts,
         responses,
@@ -329,11 +334,11 @@ async def benchmark(
         median_first_token_latency,
         median_token_latency,
         median_e2e_latency,
-        result_filename + ".txt",
+        result_path + ".csv",
         True,
     )
     # Save latency for CDF plotting
-    np.save(result_filename + ".npy", m._latencies)
+    np.save(result_path + ".npy", m._latencies)
 
 
 def main():
@@ -371,7 +376,7 @@ def main():
             tokenizer,
             args.traffic_distribution,
             args.qps,
-            args.result_filename,
+            args.result_path,
             args.stream,
             args.port,
         )
