@@ -2,11 +2,12 @@
 
 export PORT=8000
 
-num_prompts=10
+num_prompts=1000
 ranges=("32" "128" "512" "1536")
 max_batch_total_tokens_vals=("8700" "8700" "8700" "8700")
 model_name="/data/dataset/Llama-2-7b-hf"
 cuda_devices="7"
+result_dir="./benchmark_llama7b"
 backend="lightllm"
 
 function start_model_server {
@@ -68,10 +69,10 @@ for i in ${!ranges[@]}; do
     ulimit -n 65536 && python3 benchmark_llm_serving.py \
             --backend $backend \
             --port $PORT \
-            --stream True \
             --random_prompt_lens_mean 512 \
             --random_prompt_lens_range 0 \
             --num_requests $num_prompts \
+            --stream True \
             --allow_random_response_lens \
             --random_response_lens_mean 128 \
             --random_response_lens_range $range \

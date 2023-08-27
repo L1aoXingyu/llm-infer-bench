@@ -8,7 +8,7 @@ max_batch_total_tokens_vals=("8700" "8700" "8700" "8700")
 model_name="/data/dataset/Llama-2-7b-hf"
 cuda_devices="7"
 result_dir="./benchmark_llama7b"
-backend="lightllm"
+backend="vllm"
 
 function start_model_server {
     local max_num_batched_tokens=$1
@@ -50,9 +50,10 @@ for i in ${!ranges[@]}; do
             --port $PORT \
             --random_prompt_lens_mean 512 \
             --random_prompt_lens_range 0 \
+            --stream True \
             --num_requests 30 \
             --allow_random_response_lens \
-            --fixed_max_response_tokens $range \
+            --fixed_max_response_tokens $range
     popd
     kill_model_server
 
@@ -72,6 +73,7 @@ for i in ${!ranges[@]}; do
             --random_prompt_lens_mean 512 \
             --random_prompt_lens_range 0 \
             --num_requests $num_prompts \
+            --stream True \
             --allow_random_response_lens \
             --random_response_lens_mean 128 \
             --random_response_lens_range $range \
