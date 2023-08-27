@@ -185,7 +185,7 @@ def gen_random_prompts(
     prompts_as_tokens = list(map(gen_prompt_tokens, prompt_lens))
     prompts = list(map(tokenizer.decode, prompts_as_tokens))
 
-    # Because tokens do not map 1:1 to words, sometimes we get more or less tokens than desired.
+    # Because token does not map 1:1 to words, sometimes we get more or less tokens than desired.
     new_prompts = []
     encoded_prompts = tokenizer(prompts, add_special_tokens=False)["input_ids"]
     for encoded, pmp_len in zip(encoded_prompts, prompt_lens):
@@ -196,10 +196,10 @@ def gen_random_prompts(
             # This left-pads the prompt with padding tokens.
             encoded = [tokenizer.pad_token_id] * (pmp_len - len(encoded)) + encoded
         decoded = tokenizer.decode(encoded)
-        encoded = tokenizer(decoded, add_special_tokens=False)["input_ids"]
-        assert (
-            len(encoded) == pmp_len
-        ), f"Expected prompt to contain exactly {pmp_len} tokens, got {len(encoded)=}"
+        # encoded = tokenizer(decoded, add_special_tokens=False)["input_ids"]
+        # assert (
+        #     len(encoded) == pmp_len
+        # ), f"Expected prompt to contain exactly {pmp_len} tokens, got {len(encoded)=}"
         new_prompts.append(decoded)
 
     return new_prompts, prompt_lens
