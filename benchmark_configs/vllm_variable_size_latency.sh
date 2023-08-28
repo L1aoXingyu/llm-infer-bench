@@ -4,7 +4,7 @@ export PORT=8000
 
 model_name="/data/dataset/Llama-2-7b-hf"
 cuda_devices="7"
-result_dir="./benchmark_llama7b"
+result_dir="./benchmark_llama7b_new"
 backend="vllm"
 
 function start_model_server {
@@ -49,10 +49,10 @@ popd
 kill_model_server
 
 # Run real test
-for qps in 8 16 32; do
+for qps in 1 2 4; do
     QPS=$qps
-    range=1536
-    num_prompts=5000
+    range=512
+    num_prompts=1000
     echo "range $range, num_prompts $num_prompts, qps $QPS"
 
     start_model_server
@@ -71,7 +71,7 @@ for qps in 8 16 32; do
             --response_distribution capped_exponential \
             --allow_random_response_lens \
             --qps $QPS \
-            --result_path $result_dir/${backend}_range_${range}_latency
+            --result_path $result_dir/${backend}_qps_${qps}_latency
     popd
     kill_model_server
 

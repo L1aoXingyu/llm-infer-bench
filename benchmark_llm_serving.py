@@ -3,19 +3,13 @@ import time
 import random
 import os
 import numpy as np
-import aiohttp
 from utils import MeasureLatency, calculate_throughput, get_token_id_lens
 import json
 from typing import Optional, List, Tuple
 from enum import Enum
 import asyncio
 from transformers import HfArgumentParser, PreTrainedTokenizerBase, AutoTokenizer
-
-
-class Backend(str, Enum):
-    VLLM = "vllm"
-    LIGHTLLM = "lightllm"
-    TGI = "tgi"
+from backend_function import Backend, BackendFunctionRegistry
 
 
 class Distribution(str, Enum):
@@ -236,101 +230,6 @@ def gen_random_response_lens(
         raise ValueError(f"unknown distribution {distribution=}")
 
 
-async def query_model_vllm(prompt: Tuple[str, int, int], stream: bool, port: int):
-    prompt, _, expected_response_len = prompt
-    assert expected_response_len > 0, f"{expected_response_len=}"
-
-    timeout = aiohttp.ClientTimeout(total=4 * 60 * 60)  # 4 hours
-
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        generation_input = {
-            "prompt": prompt,
-            "stream": stream,
-            # sampling parameters
-            "ignore_eos": True,
-            "max_tokens": expected_response_len,
-        }
-
-        start_time = time.time()
-        first_chunk_time = 0
-        async with session.post(
-            f"http://localhost:{port}/generate", json=generation_input
-        ) as resp:
-            if resp.status != 200:
-                print(f"Error: {resp.status} {resp.reason}")
-                print(await resp.text())
-                return None, None, None
-
-            if stream:
-                buffer = b""
-                first_chunk_received = False
-                async for chunk in resp.content.iter_any():
-                    buffer += chunk
-
-                    # If this is the first chunk, record the time taken
-                    if not first_chunk_received:
-                        first_chunk_time = time.time() - start_time
-                        first_chunk_received = True
-
-                    while b"\0" in buffer:  # Split by null character
-                        json_str, buffer = buffer.split(b"\0", 1)
-                output = json.loads(json_str.decode("utf-8"))  # Decode JSON
-
-            else:
-                output = await resp.json()
-
-            return output["text"][0], expected_response_len, first_chunk_time
-
-
-async def query_model_lightllm(prompt: Tuple[str, int, int], stream: bool, port: int):
-    prompt, _, expected_response_len = prompt
-    assert expected_response_len > 0, f"{expected_response_len=}"
-
-    timeout = aiohttp.ClientTimeout(total=4 * 60 * 60)  # 4 hours
-
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        generation_input = {
-            "inputs": prompt,
-            "parameters": {
-                "do_sample": False,
-                "ignore_eos": True,
-                "max_new_tokens": expected_response_len,
-            },
-        }
-
-        start_time = time.time()
-        first_chunk_time = 0
-        async with session.post(
-            f"http://localhost:{port}/generate", json=generation_input
-        ) as resp:
-            if resp.status != 200:
-                print(f"Error: {resp.status} {resp.reason}")
-                print(await resp.text())
-                return None, None, None
-
-            if stream:
-                first_chunk_received = False
-                chunks = []
-                async for chunk, _ in resp.content.iter_chunks():
-                    # If this is the first chunk, record the time taken
-                    if not first_chunk_received:
-                        first_chunk_time = time.time() - start_time
-                        first_chunk_received = True
-
-                    chunks.append(chunk)
-
-                output = b"".join(chunks).decode("utf-8")
-                output = json.loads(output)
-            else:
-                output = await resp.json()
-
-            return output["generated_text"][0], expected_response_len, first_chunk_time
-
-
-async def query_model_tgi(prompt: Tuple[str, int, int], stream: bool, port: int):
-    pass
-
-
 async def async_request_gen(generator, qps: float, distribution: Distribution):
     def get_wait_time():
         mean_time_between_requests = 1.0 / qps
@@ -364,12 +263,7 @@ async def benchmark(
     port: int,
 ):
     m = MeasureLatency()
-    if backend == Backend.VLLM:
-        query_model = m.measure(query_model_vllm)
-    elif backend == Backend.LIGHTLLM:
-        query_model = m.measure(query_model_lightllm)
-    elif backend == Backend.TGI:
-        query_model = m.measure(query_model_tgi)
+    query_model = m.measure(BackendFunctionRegistry.get_function(backend))
 
     if traffic_distribution == Distribution.BURST:
         qps = float("inf")
