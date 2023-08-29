@@ -1,9 +1,0 @@
-[submodule "vllm"]
-	path = vllm
-	url = git@github.com:vllm-project/vllm.git
-[submodule "lightllm"]
-	path = lightllm
-	url = git@github.com:ModelTC/lightllm.git
-[submodule "text-generation-inference"]
-	path = text-generation-inference
-	url = git@github.com:huggingface/text-generation-inference.git
