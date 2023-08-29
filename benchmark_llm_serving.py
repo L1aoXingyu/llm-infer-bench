@@ -9,7 +9,7 @@ from typing import Optional, List, Tuple
 from enum import Enum
 import asyncio
 from transformers import HfArgumentParser, PreTrainedTokenizerBase, AutoTokenizer
-from backend_function import Backend, BackendFunctionRegistry
+from query_backend import Backend, BackendFunctionRegistry
 
 
 class Distribution(str, Enum):
@@ -272,10 +272,13 @@ async def benchmark(
 
     async_prompts = async_request_gen(iter(prompts), qps, traffic_distribution)
 
+    num_requests = len(prompts)
     start_time = time.time()
     tasks = []
     async for prompt in async_prompts:
-        tasks.append(asyncio.create_task(query_model(prompt, stream, port)))
+        tasks.append(
+            asyncio.create_task(query_model(prompt, stream, port, num_requests))
+        )
 
     responses = await asyncio.gather(*tasks)
     dur_s = time.time() - start_time

@@ -4,7 +4,9 @@ import time
 import json
 
 
-async def query_model_vllm(prompt: Tuple[str, int, int], stream: bool, port: int):
+async def query_model_vllm(
+    prompt: Tuple[str, int, int], stream: bool, port: int, num_requests: int
+):
     prompt, _, expected_response_len = prompt
     assert expected_response_len > 0, f"{expected_response_len=}"
 

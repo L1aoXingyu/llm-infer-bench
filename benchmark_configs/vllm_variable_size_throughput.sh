@@ -69,6 +69,7 @@ for i in ${!ranges[@]}; do
 
     ulimit -n 65536 && python3 benchmark_llm_serving.py \
             --backend $backend \
+            --tokenizer $model_name \
             --port $PORT \
             --random_prompt_lens_mean 512 \
             --random_prompt_lens_range 0 \
