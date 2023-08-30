@@ -9,6 +9,7 @@ async def query_model_lightllm(
 ):
     prompt, _, expected_response_len = prompt
     assert expected_response_len > 0, f"{expected_response_len=}"
+    assert stream, "lightllm only supports streaming with True"
 
     timeout = aiohttp.ClientTimeout(total=4 * 60 * 60)  # 4 hours
 
@@ -46,6 +47,6 @@ async def query_model_lightllm(
                 output = b"".join(chunks).decode("utf-8")
                 output = json.loads(output)
             else:
-                output = await resp.json()
+                raise NotImplementedError
 
             return output["generated_text"][0], expected_response_len, first_chunk_time

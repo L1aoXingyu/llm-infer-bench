@@ -17,6 +17,7 @@ async def query_model_tgi(
             "inputs": prompt,
             "parameters": {
                 "max_new_tokens": expected_response_len,
+                "return_full_text": False,
             },
         }
 
@@ -41,8 +42,10 @@ async def query_model_tgi(
                         first_chunk_time = time.time() - start_time
                         first_chunk_received = True
 
-                    while b"\0" in buffer:  # Split by null character
-                        json_str, buffer = buffer.split(b"\0", 1)
+                    while b"\n\n" in buffer:  # Split by null character
+                        json_str, buffer = buffer.split(b"\n\n", 1)
+                if json_str.startswith(b"data:"):
+                    json_str = json_str[5:].strip()
                 output = json.loads(json_str.decode("utf-8"))  # Decode JSON
         else:
             async with session.post(
@@ -55,4 +58,4 @@ async def query_model_tgi(
 
                 output = await resp.json()
 
-    return output["generated_text"][0], expected_response_len, first_chunk_time
+    return output["generated_text"], expected_response_len, first_chunk_time
