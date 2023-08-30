@@ -35,4 +35,4 @@ async def query_model_hf(
 
             output = await resp.json()
 
-    return output["generated_text"][0], expected_response_len, first_chunk_time
+    return output["generated_text"], expected_response_len, first_chunk_time
