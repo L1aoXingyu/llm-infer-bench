@@ -1,5 +1,6 @@
 import time
 import numpy as np
+import csv
 from typing import List, Tuple
 from transformers import PreTrainedTokenizerBase
 
@@ -68,10 +69,35 @@ def calculate_throughput(
     qps = len(responses) / dur_s
 
     print(f"Writing results to {results_filename} ...")
-    with open(results_filename, "a") as f:
-        msg = f"{dur_s=:.02f}s, {throughput_token_s=:.02f}/s, {qps=:.02f}/s, successful_responses={len(responses)}, {prompt_token_count=}, {response_token_count=}, {median_first_token_latency=:.06f}, {median_token_latency=:.06f}, {median_e2e_latency=:.06f}"
-        print(msg, file=f)
-        print(msg)
+    fields = [
+        "dur_s",
+        "throughput_token_s",
+        "qps",
+        "successful_responses",
+        "prompt_token_count",
+        "response_token_count",
+        "expected_response_token_count" "median_first_token_latency",
+        "median_token_latency",
+        "median_e2e_latency",
+    ]
+    values = [
+        dur_s,
+        throughput_token_s,
+        qps,
+        len(responses),
+        prompt_token_count,
+        response_token_count,
+        expected_response_token_count,
+        median_first_token_latency,
+        median_token_latency,
+        median_e2e_latency,
+    ]
+
+    with open(results_filename, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        # Uncomment the next line to write headers if it's the first row
+        writer.writeheader()
+        writer.writerow(dict(zip(fields, values)))
 
     if fail_on_response_failure:
         assert len(responses) == len(
