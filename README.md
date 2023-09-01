@@ -29,7 +29,7 @@ docker run -itd --name tgi_test \
 # 70B Model
 docker run -itd --name tgi_test \
     --env CUDA_VISIBLE_DEVICES=4,5,6,7 \
-###     --gpul
+    --gpus all \
     --shm-size 1g \
     -p 18080:80 \
     -v /data0/home/models:/data \
