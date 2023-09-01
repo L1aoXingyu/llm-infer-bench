@@ -42,7 +42,7 @@ docker run -itd --name tgi_test \
     --max-concurrent-requests 10000
 ```
 
-Benchmarking TGI
+### Benchmarking
 
 ```bash
 # throughput
@@ -116,7 +116,7 @@ bash benchmark_configs/lightllm_variable_size_latency.sh
 ```
 
 ## Benchmarking Results
-All benchmarks were conducted on an NVIDIA A800-SXM4-80GB GPU connected via PCIe. We evaluated both 13B and 70B models.
+All benchmarks were conducted on an NVIDIA A800-SXM4-80GB GPU connected via PCIe. We evaluated both 13B and 70B llama models.
 
 ### Throughput
 We used the dummy dataset consisting of 1,000 sequences, each containing 512 input tokens. The model was configured to generate per-sequences with a maximum length (max_tokens) by ignoring the End-of-Sequence (EoS) token.
@@ -135,7 +135,7 @@ The reuslts are as follows:
 | vLLM | 6841.49 | 5086.82 | 3533.67 | 3325.49 |
 | lightLLM | 6821.80 | 6063.72 | 4404.93 | 4102.28 |
 
-<img src="assets/llama13b_throughput.png" width=700>
+<img src="assets/llama13b_throughput.png" width=800>
 
 70B Model
 
@@ -145,7 +145,7 @@ The reuslts are as follows:
 | vLLM | 4514.55 | 3615.29 | 2429.91 | 2300.71 |
 | lightLLM | 5024.78 | 4562.66 | 3568.23 | 3297.87 |
 
-<img src="assets/llama70b_throughput.png" width=700>
+<img src="assets/llama70b_throughput.png" width=800>
 
 
 ### Latency
@@ -163,7 +163,12 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 | vLLM | 0.0260 (2.4723) | 0.0348 (3.2986) | 0.0825 (7.4093) |
 | lightLLM | 0.0337 (2.7406) | 0.0453 (3.7370) | 0.1257 (9.5245) |
 
-<img src="assets/latency_llama13b.png" width=1000>
+<p float="left">
+  <img src="assets/llama13b_qps2_cdf.png" width="33%" />
+  <img src="assets/llama13b_qps4_cdf.png" width="33%" />
+  <img src="assets/llama13b_qps8_cdf.png" width="33%" />
+</p>
+
 
 70B Model
 
@@ -173,7 +178,11 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 | vLLM | 0.0578 (5.4908)  | 0.0835 (7.7701) | 0.2079 (18.6611) |
 | lightLLM | 0.0627 (5.1785) | 0.0712 (5.8945) | 0.1077 (8.7133) |
 
-<img src="assets/latency_llama70b.png" width=1000>
+<p float="left">
+  <img src="assets/llama70b_qps1_cdf.png" width="33%" />
+  <img src="assets/llama70b_qps2_cdf.png" width="33%" />
+  <img src="assets/llama70b_qps4_cdf.png" width="33%" />
+</p>
 
 ## Acknowledgements
 
