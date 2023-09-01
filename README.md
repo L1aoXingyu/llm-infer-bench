@@ -151,7 +151,7 @@ The reuslts are as follows:
 ### Latency
 Latency is a critical metric for live-inference endpoints as it directly impacts user experience. We measure how the [cumulative distribution function](https://en.wikipedia.org/wiki/Cumulative_distribution_function) of latencies varies across different serving frameworks.
 
-As with throughput testing, the model is configured to ignore the `EoS` token and generate sequences of a specified length. We use a dataset of 1,000 randomly sampled prompts, with lengths sampled from a [uniform distribution](https://en.wikipedia.org/wiki/Uniform_distribution) ranging from 1 to 512 tokens. The output lengths are sampled from a capped exponential distribution with a mean of 128 and a maximum size of 512 tokens. These parameters were selected for their realistic representation of typical workloads.
+As with throughput testing, the model is configured to ignore the `EoS` token and generate sequences of a specified length. We use a dataset of 1,000 randomly sampled prompts, with lengths sampled from a [uniform distribution](https://en.wikipedia.org/wiki/Discrete_uniform_distribution) ranging from 1 to 512 tokens. The output lengths are sampled from a capped exponential distribution with a mean of 128 and a maximum size of 512 tokens. These parameters were selected for their realistic representation of typical workloads.
 
 Unlike the throughput benchmark, where all requests are submitted simultaneously, here we stagger the requests. The time between each request is determined by sampling a [Poisson distribution](https://en.wikipedia.org/wiki/Poisson_distribution). This setup allows us to evaluate how each serving framework performs under varying Query Per Second (QPS) loads.
 
@@ -172,7 +172,6 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 | TGI | 0.0456 (4.1999) | 0.0515 (4.7381) | 0.0633 (5.7956)  |
 | vLLM | 0.0578 (5.4908)  | 0.0835 (7.7701) | 0.2079 (18.6611) |
 | lightLLM | 0.0627 (5.1785) | 0.0712 (5.8945) | 0.1077 (8.7133) |
-
 
 <img src="assets/latency_llama70b.png" width=1000>
 
