@@ -157,11 +157,11 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 
 13B Model
 
-| generation request latency vs. QPS |  QPS=2 | QPS=4 | QPS=8 |
+| generation request latency vs. QPS (median token latency / median request latency) |  QPS=2 | QPS=4 | QPS=8 |
 |:--|:--|:--|:--|
-| TGI | 0.0256 (2.3892) | 0.0322 (2.9769) | 0.0542 (4.8202) |
-| vLLM | 0.0260 (2.4723) | 0.0348 (3.2986) | 0.0825 (7.4093) |
-| lightLLM | 0.0337 (2.7406) | 0.0453 (3.7370) | 0.1257 (9.5245) |
+| TGI | 0.0256 / 2.3892 | 0.0322 / 2.9769 | 0.0542 / 4.8202 |
+| vLLM | 0.0260 / 2.4723 | 0.0348 / 3.2986 | 0.0825 / 7.4093 |
+| lightLLM | 0.0337 / 2.7406 | 0.0453 / 3.7370 | 0.1257 / 9.5245 |
 
 <p float="left">
   <img src="assets/llama13b_qps2_cdf.png" width="33%" />
@@ -172,11 +172,11 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 
 70B Model
 
-| generation request latency vs. QPS | QPS=1 | QPS=2 | QPS=4 |
+| generation request latency vs. QPS (median token latency / median request latency)| QPS=1 | QPS=2 | QPS=4 |
 |:--|:--|:--|:--|
-| TGI | 0.0456 (4.1999) | 0.0515 (4.7381) | 0.0633 (5.7956)  |
-| vLLM | 0.0578 (5.4908)  | 0.0835 (7.7701) | 0.2079 (18.6611) |
-| lightLLM | 0.0627 (5.1785) | 0.0712 (5.8945) | 0.1077 (8.7133) |
+| TGI | 0.0456 / 4.1999 | 0.0515 / 4.7381 | 0.0633 / 5.7956  |
+| vLLM | 0.0578 / 5.4908  | 0.0835 / 7.7701 | 0.2079 / 18.6611 |
+| lightLLM | 0.0627 / 5.1785 | 0.0712 / 5.8945 | 0.1077 / 8.7133 |
 
 <p float="left">
   <img src="assets/llama70b_qps1_cdf.png" width="33%" />
