@@ -163,7 +163,7 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 | vLLM | 0.0260 (2.4723) | 0.0348 (3.2986) | 0.0825 (7.4093) |
 | lightLLM | 0.0337 (2.7406) | 0.0453 (3.7370) | 0.1257 (9.5245) |
 
-<img src="assets/latency_llama13b.png" width=600>
+<img src="assets/latency_llama13b.png" width=900>
 
 70B Model
 
@@ -174,7 +174,7 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 | lightLLM | 0.0627 (5.1785) | 0.0712 (5.8945) | 0.1077 (8.7133) |
 
 
-<img src="assets/latency_llama70b.png" width=600>
+<img src="assets/latency_llama70b.png" width=900>
 
 ## Acknowledgements
 
@@ -183,6 +183,6 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 - [TGI](https://github.com/huggingface/text-generation-inference/tree/main)
 - [LightLLM](https://github.com/ModelTC/lightllm)
 
-- [^1]: docker image: ghcr.io/huggingface/text-generation-inference:1.0.2
-- [^2]: commit_id: 28873a2799ddfdd0624edd4619e6fbeeb49cd02c
-- [^3]: commit_id: 718e6d6dfffc75e7bbfd7ea80ba4afb77aa27726
+[^1]: docker image: ghcr.io/huggingface/text-generation-inference:1.0.2
+[^2]: commit_id: 28873a2799ddfdd0624edd4619e6fbeeb49cd02c
+[^3]: commit_id: 718e6d6dfffc75e7bbfd7ea80ba4afb77aa27726
