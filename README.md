@@ -96,7 +96,7 @@ CUDA_VISIBLE_DEVICES=0 python3 -m lightllm.server.api_server \
 	--max_total_token_num 68700
 ```
 
-## Run lightLLM
+70B Model with 4 GPUs
 
 ```bash
 CUDA_VISIBLE_DEVICES=4,5,6,7 python3 -m lightllm.server.api_server \
@@ -163,7 +163,7 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 | vLLM | 0.0260 (2.4723) | 0.0348 (3.2986) | 0.0825 (7.4093) |
 | lightLLM | 0.0337 (2.7406) | 0.0453 (3.7370) | 0.1257 (9.5245) |
 
-<img src="assets/latency_llama13b.png" width=900>
+<img src="assets/latency_llama13b.png" width=1000>
 
 70B Model
 
@@ -174,7 +174,7 @@ Unlike the throughput benchmark, where all requests are submitted simultaneously
 | lightLLM | 0.0627 (5.1785) | 0.0712 (5.8945) | 0.1077 (8.7133) |
 
 
-<img src="assets/latency_llama70b.png" width=900>
+<img src="assets/latency_llama70b.png" width=1000>
 
 ## Acknowledgements
 
